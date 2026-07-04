@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+"""Engineering-blog digest.
+
+One Telegram message every evening (~19:07 IST via GitHub Actions): new
+posts from the company engineering blogs worth a data engineer's time —
+what each post is about, the technical takeaway, and a link.
+
+Blogs post rarely (0–5 posts/day across all feeds), so unlike the tech
+briefing this agent is SILENT on days with no new posts — a message always
+means there's something to read. Set ENG_BLOGS_FORCE=1 to send regardless
+(used for testing).
+
+Same fleet pattern as tech-news: own repo, own schedule, fails alone.
+"""
+
+import os
+import re
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+import feedparser
+from dotenv import load_dotenv
+
+from agentlib import ask_claude, send_telegram
+
+BASE_DIR = Path(__file__).resolve().parent
+IST = ZoneInfo("Asia/Kolkata")
+
+# category → [(source name, feed url)] — all URLs verified 4 Jul 2026
+FEEDS = {
+    "Data & Analytics": [
+        ("Databricks", "https://www.databricks.com/feed"),
+        ("Confluent", "https://www.confluent.io/rss.xml"),
+        ("Snowflake", "https://www.snowflake.com/feed/"),
+        ("AWS Big Data", "https://aws.amazon.com/blogs/big-data/feed/"),
+        ("dbt", "https://www.getdbt.com/blog/rss.xml"),
+        ("DuckDB", "https://duckdb.org/feed.xml"),
+    ],
+    "Systems & Scale": [
+        ("Netflix", "https://netflixtechblog.com/feed"),
+        ("Uber", "https://eng.uber.com/feed/"),
+        ("Meta", "https://engineering.fb.com/feed/"),
+        ("Cloudflare", "https://blog.cloudflare.com/rss/"),
+        ("Discord", "https://discord.com/blog/rss.xml"),
+        ("Slack", "https://slack.engineering/feed/"),
+    ],
+    "Product & ML Eng": [
+        ("Spotify", "https://engineering.atspotify.com/feed/"),
+        ("Airbnb", "https://medium.com/feed/airbnb-engineering"),
+        ("Pinterest", "https://medium.com/feed/pinterest-engineering"),
+    ],
+}
+ENTRIES_PER_FEED = 8
+SUMMARY_CHARS = 400  # blogs have meaty abstracts; give Claude more than news
+# Overridable so a manual run can catch up a wider window (workflow input)
+LOOKBACK_HOURS = int(os.environ.get("ENG_BLOGS_LOOKBACK_HOURS", "24"))
+
+TAG_RE = re.compile(r"<[^>]+>")
+
+
+def clean(html):
+    """Strip tags and collapse whitespace — feed summaries arrive as HTML."""
+    return " ".join(TAG_RE.sub(" ", html or "").split())
+
+
+def fresh(entry, cutoff):
+    """Keep entries newer than cutoff; undated entries are DROPPED here —
+    corporate feeds are reliably dated, and an undated stale post repeating
+    daily is worse than missing one."""
+    stamp = entry.get("published_parsed") or entry.get("updated_parsed")
+    if not stamp:
+        return False
+    return datetime(*stamp[:6], tzinfo=timezone.utc) >= cutoff
+
+
+def gather_posts():
+    """{category: [{source, title, summary, link}, ...]} — dead feeds skipped."""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=LOOKBACK_HOURS)
+    out = {}
+    for category, sources in FEEDS.items():
+        posts = []
+        for name, url in sources:
+            try:
+                feed = feedparser.parse(url)
+                for e in feed.entries[:ENTRIES_PER_FEED]:
+                    if not fresh(e, cutoff):
+                        continue
+                    posts.append(
+                        {
+                            "source": name,
+                            "title": e.get("title", "(untitled)"),
+                            "summary": clean(e.get("summary", ""))[:SUMMARY_CHARS],
+                            "link": e.get("link", ""),
+                        }
+                    )
+            except Exception:
+                continue  # dead feed → just use the others
+        out[category] = posts
+    return out
+
+
+def summarize(posts):
+    """One Claude call: raw posts in, compact reading guide out."""
+    blocks = []
+    for category, entries in posts.items():
+        lines = "\n".join(
+            f"- [{p['source']}] {p['title']} | {p['summary']} | {p['link']}"
+            for p in entries
+        )
+        blocks.append(f"=== {category} ===\n{lines or '(no new posts)'}")
+
+    prompt = (
+        "You are composing my evening engineering-blog digest. Below are "
+        "today's new posts from company engineering blogs, grouped by "
+        "category ([source] title | abstract | link). I am a data engineer. "
+        "Plain text only — no markdown headers or bold.\n\n"
+        + "\n\n".join(blocks)
+        + "\n\n"
+        "Produce this structure, using ONLY sections that have posts (skip "
+        "empty ones entirely):\n\n"
+        "🗄 DATA & ANALYTICS\n\n"
+        "⚙️ SYSTEMS & SCALE\n\n"
+        "🚀 PRODUCT & ML ENG\n\n"
+        "Rules:\n"
+        "- Include EVERY post (volume is low) unless one is pure marketing "
+        "with no engineering content — drop those silently.\n"
+        "- Each post: 'Source — title' on one line, then 1–2 sentences: "
+        "what the post covers and the single technical takeaway for a data "
+        "engineer, then the link on its own line.\n"
+        "- Rank within a section: architecture deep-dives and postmortems "
+        "first, release notes and how-tos after.\n"
+        "- Blank line between posts."
+    )
+    return ask_claude(prompt, max_tokens=3000)
+
+
+def main():
+    load_dotenv(BASE_DIR / ".env")
+    posts = gather_posts()
+    total = sum(len(v) for v in posts.values())
+
+    if total == 0 and not os.environ.get("ENG_BLOGS_FORCE"):
+        print("no new posts in the last 24h — staying silent")
+        return
+
+    header = (
+        f"📚 Engineering blogs — {datetime.now(IST):%a %d %b %Y}\n"
+        f"({total} new posts in the last 24h)\n\n"
+    )
+    body = summarize(posts) if total else "No new posts today (forced send)."
+    send_telegram(header + body)
+
+
+if __name__ == "__main__":
+    main()
