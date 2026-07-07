@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 import feedparser
 from dotenv import load_dotenv
 
-from agentlib import ask_claude, send_telegram
+from agentlib import ask_llm, send_telegram
 
 BASE_DIR = Path(__file__).resolve().parent
 IST = ZoneInfo("Asia/Kolkata")
@@ -52,9 +52,8 @@ FEEDS = {
     ],
 }
 ENTRIES_PER_FEED = 8
-SUMMARY_CHARS = 400  # blogs have meaty abstracts; give Claude more than news
-# Overridable so a manual run can catch up a wider window (workflow input)
-LOOKBACK_HOURS = int(os.environ.get("ENG_BLOGS_LOOKBACK_HOURS", "24"))
+SUMMARY_CHARS = 400  # blogs have meaty abstracts; keep more than for news
+DEFAULT_LOOKBACK_HOURS = 24
 
 TAG_RE = re.compile(r"<[^>]+>")
 
@@ -74,9 +73,9 @@ def fresh(entry, cutoff):
     return datetime(*stamp[:6], tzinfo=timezone.utc) >= cutoff
 
 
-def gather_posts():
+def gather_posts(lookback_hours):
     """{category: [{source, title, summary, link}, ...]} — dead feeds skipped."""
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=LOOKBACK_HOURS)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
     out = {}
     for category, sources in FEEDS.items():
         posts = []
@@ -101,7 +100,7 @@ def gather_posts():
 
 
 def summarize(posts):
-    """One Claude call: raw posts in, compact reading guide out."""
+    """One model call: raw posts in, compact reading guide out."""
     blocks = []
     for category, entries in posts.items():
         lines = "\n".join(
@@ -132,21 +131,24 @@ def summarize(posts):
         "first, release notes and how-tos after.\n"
         "- Blank line between posts."
     )
-    return ask_claude(prompt, max_tokens=3000)
+    return ask_llm(prompt, max_tokens=3000)
 
 
 def main():
     load_dotenv(BASE_DIR / ".env")
-    posts = gather_posts()
+    # Read after load_dotenv so .env can set it too; a manual workflow run
+    # passes a wider window here to catch up after missed days.
+    lookback = int(os.environ.get("ENG_BLOGS_LOOKBACK_HOURS", DEFAULT_LOOKBACK_HOURS))
+    posts = gather_posts(lookback)
     total = sum(len(v) for v in posts.values())
 
     if total == 0 and not os.environ.get("ENG_BLOGS_FORCE"):
-        print("no new posts in the last 24h — staying silent")
+        print(f"no new posts in the last {lookback}h — staying silent")
         return
 
     header = (
         f"📚 Engineering blogs — {datetime.now(IST):%a %d %b %Y}\n"
-        f"({total} new posts in the last 24h)\n\n"
+        f"({total} new posts in the last {lookback}h)\n\n"
     )
     body = summarize(posts) if total else "No new posts today (forced send)."
     send_telegram(header + body)

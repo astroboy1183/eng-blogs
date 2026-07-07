@@ -70,5 +70,3 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           ENG_BLOGS_LOOKBACK_HOURS: ${{ inputs.lookback_hours || '24' }}
         run: python eng_blogs.py
-
-# (re-push to register workflow — first-commit pushes do not register; fleet gotcha)

@@ -1,4 +1,4 @@
-"""Shared plumbing for personal agents: one Claude call, one Telegram send.
+"""Shared plumbing for personal agents: one summarizer call, one Telegram send.
 
 Imported by every agent (morning briefing, GitHub radar, housekeeper) so the
 delivery/summarize code exists exactly once. Agents still run on independent
@@ -13,8 +13,8 @@ from anthropic import Anthropic
 TELEGRAM_CHUNK = 4000  # Telegram's hard limit is 4096 chars per message
 
 
-def ask_claude(prompt, model="claude-haiku-4-5", max_tokens=2000):
-    """Single-turn Claude call; returns the text response."""
+def ask_llm(prompt, model="claude-haiku-4-5", max_tokens=2000):
+    """Single-turn model call; returns the text response."""
     client = Anthropic()  # ANTHROPIC_API_KEY from environment
     response = client.messages.create(
         model=model,
