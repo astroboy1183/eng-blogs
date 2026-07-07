@@ -27,7 +27,10 @@ from agentlib import ask_llm, send_telegram
 BASE_DIR = Path(__file__).resolve().parent
 IST = ZoneInfo("Asia/Kolkata")
 
-# category → [(source name, feed url)] — all URLs verified 4 Jul 2026
+# category → [(source name, feed url)] — URLs verified 4 Jul 2026
+# (Stripe/Dropbox/Canva added + verified 7 Jul 2026. Stripe's feed is the
+# whole blog, not just engineering — the drop-pure-marketing rule in the
+# prompt handles the mix.)
 FEEDS = {
     "Data & Analytics": [
         ("Databricks", "https://www.databricks.com/feed"),
@@ -44,11 +47,14 @@ FEEDS = {
         ("Cloudflare", "https://blog.cloudflare.com/rss/"),
         ("Discord", "https://discord.com/blog/rss.xml"),
         ("Slack", "https://slack.engineering/feed/"),
+        ("Stripe", "https://stripe.com/blog/feed.rss"),
+        ("Dropbox", "https://dropbox.tech/feed"),
     ],
     "Product & ML Eng": [
         ("Spotify", "https://engineering.atspotify.com/feed/"),
         ("Airbnb", "https://medium.com/feed/airbnb-engineering"),
         ("Pinterest", "https://medium.com/feed/pinterest-engineering"),
+        ("Canva", "https://www.canva.dev/blog/engineering/feed.xml"),
     ],
 }
 ENTRIES_PER_FEED = 8

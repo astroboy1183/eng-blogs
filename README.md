@@ -3,7 +3,7 @@
 Evening engineering-blog digest → Telegram, ~19:07 IST daily via GitHub
 Actions.
 
-15 company engineering blogs — data platforms, systems at scale, product
+18 company engineering blogs — data platforms, systems at scale, product
 & ML engineering — filtered and summarized for a data engineer. Silent
 on days with no new posts. One agent, one task, one bot:
 `@jayanth_eng_blogs_bot`.
@@ -15,8 +15,10 @@ on days with no new posts. One agent, one task, one bot:
 - **`FEEDS`** — `{category: [(source name, feed url)]}`: Data &
   Analytics (Databricks, Confluent, Snowflake, AWS Big Data, dbt,
   DuckDB), Systems & Scale (Netflix, Uber, Meta, Cloudflare, Discord,
-  Slack), Product & ML Eng (Spotify, Airbnb, Pinterest). Named tuples so
-  the digest can credit the source.
+  Slack, Stripe, Dropbox), Product & ML Eng (Spotify, Airbnb, Pinterest,
+  Canva). Named tuples so the digest can credit the source. Stripe's
+  feed is the whole blog, not just engineering — the drop-pure-marketing
+  prompt rule handles the mix.
 - **`clean(html)`** — strips tags, collapses whitespace.
 - **`fresh(entry, cutoff)`** — keeps entries newer than the lookback.
   Undated entries are **dropped** here (opposite of tech-news):
