@@ -20,6 +20,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import feedparser
+import requests
 from dotenv import load_dotenv
 
 from agentlib import ask_llm, send_telegram
@@ -58,8 +59,20 @@ FEEDS = {
     ],
 }
 ENTRIES_PER_FEED = 8
+# Whole-blog / high-volume sources publish several posts a day, so the
+# default cap can truncate them before fresh() ever runs. Give the busy
+# feeds more headroom so a busy day isn't clipped ahead of the freshness
+# check.
+PER_FEED_LIMIT = {
+    "Databricks": 30,
+    "AWS Big Data": 30,
+    "Stripe": 30,
+}
 SUMMARY_CHARS = 400  # blogs have meaty abstracts; keep more than for news
 DEFAULT_LOOKBACK_HOURS = 24
+FETCH_TIMEOUT = 20  # seconds per feed — one hanging host must not stall the run
+# A plain User-Agent; some corporate feeds reject the bare python-requests one.
+FETCH_HEADERS = {"User-Agent": "eng-blogs-digest/1.0 (+https://github.com/astroboy1183/eng-blogs)"}
 
 TAG_RE = re.compile(r"<[^>]+>")
 
@@ -72,7 +85,12 @@ def clean(html):
 def fresh(entry, cutoff):
     """Keep entries newer than cutoff; undated entries are DROPPED here —
     corporate feeds are reliably dated, and an undated stale post repeating
-    daily is worse than missing one."""
+    daily is worse than missing one.
+
+    Prefer the publish date; fall back to the updated date ONLY when there
+    is no publish date at all. Otherwise a lightly edited OLD post carries a
+    fresh updated_parsed, re-enters the 24h window, and reappears in the
+    digest days after it first ran."""
     stamp = entry.get("published_parsed") or entry.get("updated_parsed")
     if not stamp:
         return False
@@ -80,29 +98,43 @@ def fresh(entry, cutoff):
 
 
 def gather_posts(lookback_hours):
-    """{category: [{source, title, summary, link}, ...]} — dead feeds skipped."""
+    """Returns ({category: [{source, title, summary, link}, ...]}, failed).
+
+    Each feed is fetched over HTTP with an explicit timeout so one hanging
+    host cannot stall the whole run until the 15-min job timeout. `failed`
+    lists feeds that erred, returned a non-200 status, or yielded no usable
+    entries this run, so the digest can surface feed rot loudly."""
     cutoff = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
-    out = {}
+    out, failed = {}, []
     for category, sources in FEEDS.items():
         posts = []
         for name, url in sources:
             try:
-                feed = feedparser.parse(url)
-                for e in feed.entries[:ENTRIES_PER_FEED]:
-                    if not fresh(e, cutoff):
-                        continue
-                    posts.append(
-                        {
-                            "source": name,
-                            "title": e.get("title", "(untitled)"),
-                            "summary": clean(e.get("summary", ""))[:SUMMARY_CHARS],
-                            "link": e.get("link", ""),
-                        }
-                    )
-            except Exception:
-                continue  # dead feed → just use the others
+                resp = requests.get(url, timeout=FETCH_TIMEOUT, headers=FETCH_HEADERS)
+                resp.raise_for_status()
+            except Exception as exc:  # timeout / DNS / non-200 → note and move on
+                failed.append(f"{name} ({type(exc).__name__})")
+                continue
+            feed = feedparser.parse(resp.content)
+            if not feed.entries:
+                # No usable entries: either a parse failure (bozo) or an empty
+                # feed — either way this source gave us nothing this run.
+                failed.append(f"{name} ({'malformed' if feed.bozo else 'no entries'})")
+                continue
+            limit = PER_FEED_LIMIT.get(name, ENTRIES_PER_FEED)
+            for e in feed.entries[:limit]:
+                if not fresh(e, cutoff):
+                    continue
+                posts.append(
+                    {
+                        "source": name,
+                        "title": e.get("title", "(untitled)"),
+                        "summary": clean(e.get("summary", ""))[:SUMMARY_CHARS],
+                        "link": e.get("link", ""),
+                    }
+                )
         out[category] = posts
-    return out
+    return out, failed
 
 
 def summarize(posts):
@@ -145,10 +177,14 @@ def main():
     # Read after load_dotenv so .env can set it too; a manual workflow run
     # passes a wider window here to catch up after missed days.
     lookback = int(os.environ.get("ENG_BLOGS_LOOKBACK_HOURS", DEFAULT_LOOKBACK_HOURS))
-    posts = gather_posts(lookback)
+    posts, failed = gather_posts(lookback)
     total = sum(len(v) for v in posts.values())
+    force = os.environ.get("ENG_BLOGS_FORCE")
 
-    if total == 0 and not os.environ.get("ENG_BLOGS_FORCE"):
+    # Silent only when there is genuinely nothing to report: no new posts AND
+    # no feed rot to flag. A dead feed still gets surfaced on a quiet day —
+    # otherwise the rot hides forever behind the silence.
+    if total == 0 and not failed and not force:
         print(f"no new posts in the last {lookback}h — staying silent")
         return
 
@@ -156,7 +192,14 @@ def main():
         f"📚 Engineering blogs — {datetime.now(IST):%a %d %b %Y}\n"
         f"({total} new posts in the last {lookback}h)\n\n"
     )
-    body = summarize(posts) if total else "No new posts today (forced send)."
+    if total:
+        body = summarize(posts)
+    elif force:
+        body = "No new posts today (forced send)."
+    else:
+        body = "No new posts today."
+    if failed:
+        body += "\n\n⚠️ feeds not responding: " + ", ".join(failed)
     send_telegram(header + body)
 
 
