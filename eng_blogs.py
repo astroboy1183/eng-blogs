@@ -10,9 +10,15 @@ briefing this agent is SILENT on days with no new posts — a message always
 means there's something to read. Set ENG_BLOGS_FORCE=1 to send regardless
 (used for testing).
 
+Every gathered post is also archived to data/posts-YYYY-MM.jsonl
+(committed back by the workflow) — the growing corpus for the planned
+ask-my-library RAG project. The corpus only exists from the day
+collection starts, so it starts now.
+
 Same fleet pattern as tech-news: own repo, own schedule, fails alone.
 """
 
+import json
 import os
 import re
 from datetime import datetime, timedelta, timezone
@@ -75,6 +81,39 @@ FETCH_TIMEOUT = 20  # seconds per feed — one hanging host must not stall the r
 FETCH_HEADERS = {"User-Agent": "eng-blogs-digest/1.0 (+https://github.com/astroboy1183/eng-blogs)"}
 
 TAG_RE = re.compile(r"<[^>]+>")
+
+DATA_DIR = BASE_DIR / "data"
+
+
+def archive_posts(posts):
+    """Append today's posts to a monthly JSONL corpus file.
+
+    Raw material for the future ask-my-library RAG project: date,
+    category, source, title, abstract, link — enough to embed now and to
+    fetch full text from the link later. Deduped by link against the
+    current month's file. Best-effort: an archive failure must never
+    cost the digest."""
+    try:
+        DATA_DIR.mkdir(exist_ok=True)
+        path = DATA_DIR / f"posts-{datetime.now(timezone.utc):%Y-%m}.jsonl"
+        have = set()
+        if path.exists():
+            for line in path.read_text().splitlines():
+                try:
+                    have.add(json.loads(line).get("link"))
+                except ValueError:
+                    continue
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        with path.open("a") as fh:
+            for category, entries in posts.items():
+                for p in entries:
+                    if p["link"] and p["link"] not in have:
+                        fh.write(
+                            json.dumps({"date": today, "category": category, **p})
+                            + "\n"
+                        )
+    except OSError:
+        pass
 
 
 def clean(html):
@@ -180,6 +219,8 @@ def main():
     posts, failed = gather_posts(lookback)
     total = sum(len(v) for v in posts.values())
     force = os.environ.get("ENG_BLOGS_FORCE")
+    if total:
+        archive_posts(posts)  # grow the RAG corpus even before summarizing
 
     # Silent only when there is genuinely nothing to report: no new posts AND
     # no feed rot to flag. A dead feed still gets surfaced on a quiet day —

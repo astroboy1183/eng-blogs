@@ -18,7 +18,7 @@ on:
         required: false
 
 permissions:
-  contents: read
+  contents: write  # the run commits its state back here
   actions: read  # guard step lists today's runs
 
 jobs:
@@ -70,6 +70,21 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           ENG_BLOGS_LOOKBACK_HOURS: ${{ inputs.lookback_hours || '24' }}
         run: python eng_blogs.py
+
+
+      - name: Persist state
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          # Best-effort: losing state costs tomorrow's context, never
+          # today's message (which already went out).
+          if [ -n "$(git status --porcelain data/)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add data/
+            git commit -m "Update agent state"
+            git pull --rebase -q origin main || true
+            git push || echo "state push failed (non-fatal)"
+          fi
 
       - name: Alert on failure
         if: failure()

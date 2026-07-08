@@ -61,6 +61,11 @@ on days with no new posts. One agent, one task, one bot:
 - Two crons + dedupe guard: backup at 20:07 IST delivers only if the
   19:07 primary was dropped or failed.
 
+- **RAG corpus**: every gathered post is appended to
+  `data/posts-YYYY-MM.jsonl` (deduped by link, committed back by the
+  workflow) — the raw material for the planned ask-my-library RAG
+  project. The corpus only exists from the day collection starts.
+
 ## Ops
 
 - Schedule: `.github/workflows/eng-blogs.yml` (`37 13 * * *` UTC = 19:07 IST; backup 20:07)
