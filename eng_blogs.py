@@ -83,15 +83,38 @@ FETCH_HEADERS = {"User-Agent": "eng-blogs-digest/1.0 (+https://github.com/astrob
 TAG_RE = re.compile(r"<[^>]+>")
 
 DATA_DIR = BASE_DIR / "data"
+FULLTEXT_CHARS = 20000  # per post; plenty for embedding, bounded for git
+
+
+def fetch_full_text(link):
+    """Readable text of a post, tags stripped — '' on any failure.
+
+    The corpus should hold what the RAG project will embed: the post
+    itself, not just its feed abstract. Script/style/nav blocks are
+    dropped before tag-stripping so boilerplate doesn't drown the
+    content. Hosts that block bots or paywall (some Medium blogs) fall
+    back to the abstract-only record."""
+    try:
+        resp = requests.get(link, timeout=FETCH_TIMEOUT, headers=FETCH_HEADERS)
+        resp.raise_for_status()
+        html = re.sub(
+            r"(?is)<(script|style|head|nav|footer|header)[^>]*>.*?</\1>",
+            " ",
+            resp.text,
+        )
+        text = re.sub(r"<[^>]+>", " ", html)
+        return " ".join(text.split())[:FULLTEXT_CHARS]
+    except Exception:
+        return ""
 
 
 def archive_posts(posts):
     """Append today's posts to a monthly JSONL corpus file.
 
     Raw material for the future ask-my-library RAG project: date,
-    category, source, title, abstract, link — enough to embed now and to
-    fetch full text from the link later. Deduped by link against the
-    current month's file. Best-effort: an archive failure must never
+    category, source, title, abstract, link — plus the post's full text
+    (fetched per new post; volume is 0-5/day). Deduped by link against
+    the current month's file. Best-effort: an archive failure must never
     cost the digest."""
     try:
         DATA_DIR.mkdir(exist_ok=True)
@@ -108,10 +131,9 @@ def archive_posts(posts):
             for category, entries in posts.items():
                 for p in entries:
                     if p["link"] and p["link"] not in have:
-                        fh.write(
-                            json.dumps({"date": today, "category": category, **p})
-                            + "\n"
-                        )
+                        record = {"date": today, "category": category, **p}
+                        record["text"] = fetch_full_text(p["link"])
+                        fh.write(json.dumps(record) + "\n")
     except OSError:
         pass
 

@@ -66,6 +66,12 @@ on days with no new posts. One agent, one task, one bot:
   workflow) — the raw material for the planned ask-my-library RAG
   project. The corpus only exists from the day collection starts.
 
+- **Full-text corpus**: each archived post now carries the post's
+  readable text (fetched once, boilerplate stripped, 20k-char cap) —
+  what the RAG project will actually embed. Blocked/paywalled hosts
+  fall back to the abstract-only record.
+- Tests run in CI on every push (`.github/workflows/tests.yml`).
+
 ## Ops
 
 - Schedule: `.github/workflows/eng-blogs.yml` (`37 13 * * *` UTC = 19:07 IST; backup 20:07)
