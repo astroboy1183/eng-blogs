@@ -1,4 +1,6 @@
 {
+"https://aws.amazon.com/blogs/big-data/accelerating-log-analytics-at-scale-with-aws-glue-and-apache-iceberg-materialized-views/": "2026-07-11",
+"https://aws.amazon.com/blogs/big-data/ai-powered-performance-recommendations-for-amazon-redshift/": "2026-07-11",
 "https://aws.amazon.com/blogs/big-data/how-bigbasket-uses-the-iceberg-based-lakehouse-architecture-on-aws-to-power-lightning-fast-grocery-delivery-across-india/": "2026-07-11",
 "https://aws.amazon.com/blogs/big-data/introducing-apache-spark-connect-support-in-aws-glue-interactive-sessions/": "2026-07-11",
 "https://blog.cloudflare.com/meerkat-introduction/": "2026-07-11",
@@ -6,6 +8,14 @@
 "https://engineering.fb.com/2026/07/01/data-infrastructure/metas-ai-storage-blueprint-at-scale/": "2026-07-11",
 "https://engineering.grab.com/counter-service-storage-migration": "2026-07-11",
 "https://engineering.grab.com/our-journey-to-apache-iceberg-adoption": "2026-07-11",
+"https://jack-vanlightly.com/blog/2026/6/30/benchmarking-hardwood-10-on-a-threadripper-9980x": "2026-07-11",
+"https://jack-vanlightly.com/blog/2026/7/1/1brc-on-a-threadripper-9980x": "2026-07-11",
 "https://jack-vanlightly.com/blog/2026/7/7/apache-kafka-performance-1-lingerms": "2026-07-11",
-"https://www.confluent.io/blog/tableflow-kafka-iceberg/": "2026-07-11"
+"https://netflixtechblog.com/genpage-towards-end-to-end-generative-homepage-construction-at-netflix-77146fba8a08?source=rss----2615bd06b42e---4": "2026-07-11",
+"https://www.confluent.io/blog/kafka-authentication-sasl-plain-scram-config-hot-reload/": "2026-07-11",
+"https://www.confluent.io/blog/redpanda-kafka-confluent-comparison/": "2026-07-11",
+"https://www.confluent.io/blog/tableflow-kafka-iceberg/": "2026-07-11",
+"https://www.databricks.com/blog/introducing-feature-views": "2026-07-11",
+"https://www.getdbt.com/blog/a-guide-to-implementing-ai-data-pipelines": "2026-07-11",
+"https://www.getdbt.com/blog/mcp-dbt-databricks": "2026-07-11"
 }

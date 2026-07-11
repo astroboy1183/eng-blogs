@@ -10,13 +10,28 @@ read-time estimate. One agent, one task, one bot:
 📚 Eng reads — Sat 12 Jul
 10 picks · 497 unread posts across 33 blogs
 
+📊 DATA & ANALYTICS
 1. Jack Vanlightly — Apache Kafka performance #1: linger.ms (9 min · 08 Jul 2026)
    What the post covers, why it's worth my time, the one takeaway.
    https://…
-
 2. Grab — Scaling Grab's Data Lake: our journey to Apache Iceberg (12 min · 06 Jul 2026)
    …
+
+⚙️ SYSTEMS & SCALE
+3. Netflix — …
+
+🤖 AI & ML ENG
+6. Chip Huyen — …
+
+🧰 CRAFT & CAREER
+9. Dan Luu — …
 ```
+
+Picks are grouped under four sections — 📊 DATA & ANALYTICS,
+⚙️ SYSTEMS & SCALE, 🤖 AI & ML ENG, 🧰 CRAFT & CAREER — categorized
+**per post** by the selector (a Netflix post about their warehouse is a
+data post), with a deterministic source-based fallback. Empty sections
+are omitted; rank order is preserved within each section.
 
 ## The reading-pool design
 

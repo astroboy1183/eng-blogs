@@ -115,6 +115,41 @@ class BlurbTest(unittest.TestCase):
         self.assertIn("the abstract", text)
 
 
+class CategoryTest(unittest.TestCase):
+    def test_selector_category_wins_fallback_covers_rest(self):
+        self.assertEqual(eb.category_of({"source": "Netflix", "cat": "data"}), "data")
+        self.assertEqual(eb.category_of({"source": "Netflix", "cat": "bogus"}), "systems")
+        self.assertEqual(eb.category_of({"source": "Chip Huyen"}), "ai")
+        self.assertEqual(eb.category_of({"source": "Unknown Blog"}), "systems")
+
+    def test_object_reply_parsed_with_categories(self):
+        cands = [post(title=f"p{i}", source=f"S{i}") for i in range(12)]
+        reply = '[{"i": 2, "cat": "data"}, {"i": 0, "cat": "craft"}]'
+        with mock.patch.object(eb, "ask_llm", return_value=reply):
+            picks = eb.select_picks(cands, "m")
+        self.assertEqual(picks[0]["cat"], "data")
+        self.assertEqual(picks[1]["cat"], "craft")
+        self.assertEqual(len(picks), eb.PICKS)  # topped up
+
+    def test_compose_groups_under_headers_with_running_numbers(self):
+        picks = [
+            dict(post(title="A", source="Netflix"), cat="systems"),
+            dict(post(title="B", source="dbt"), cat="data"),
+            dict(post(title="C", source="Uber"), cat="systems"),
+        ]
+        text = eb.compose(picks, {1: "a.", 2: "b.", 3: "c."}, 9, NOW)
+        self.assertIn("📊 DATA & ANALYTICS", text)
+        self.assertIn("⚙️ SYSTEMS & SCALE", text)
+        self.assertNotIn("🤖 AI & ML ENG", text)  # empty section omitted
+        # data section first; numbering runs 1..3 through the message
+        self.assertLess(text.index("📊"), text.index("⚙️"))
+        self.assertIn("1. dbt — B", text)
+        self.assertIn("2. Netflix — A", text)
+        self.assertIn("3. Uber — C", text)
+        # blurbs follow their pick's original rank
+        self.assertLess(text.index("1. dbt — B"), text.index("b."))
+
+
 class ComposeTest(unittest.TestCase):
     def test_numbered_deterministic_with_readtime_and_link(self):
         p = post(title="Kafka tuning", source="Jack Vanlightly")

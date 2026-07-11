@@ -85,6 +85,41 @@ FEEDS = [
     ("Pragmatic Engineer", "https://blog.pragmaticengineer.com/rss/"),
 ]
 
+# Message sections, in display order. Picks are categorized PER POST by
+# the selector (a Netflix post can be a data post); unknown/missing
+# categories fall back to the source's home category below.
+CATEGORIES = {
+    "data": "📊 DATA & ANALYTICS",
+    "systems": "⚙️ SYSTEMS & SCALE",
+    "ai": "🤖 AI & ML ENG",
+    "craft": "🧰 CRAFT & CAREER",
+}
+SOURCE_CATEGORY = {
+    "Databricks": "data", "Confluent": "data", "Snowflake": "data",
+    "AWS Big Data": "data", "dbt": "data", "DuckDB": "data",
+    "Jack Vanlightly": "data", "Grab": "data",
+    "Netflix": "systems", "Uber": "systems", "Meta": "systems",
+    "Cloudflare": "systems", "Discord": "systems", "Slack": "systems",
+    "Stripe": "systems", "Dropbox": "systems", "Lyft": "systems",
+    "fly.io": "systems", "Tailscale": "systems",
+    "High Scalability": "systems", "Brendan Gregg": "systems",
+    "Murat Demirbas": "systems", "Mitchell Hashimoto": "systems",
+    "Spotify": "systems", "Airbnb": "systems", "Pinterest": "systems",
+    "Canva": "systems",
+    "Chip Huyen": "ai", "Eugene Yan": "ai",
+    "Julia Evans": "craft", "Martin Fowler": "craft",
+    "Pragmatic Engineer": "craft", "Dan Luu": "craft",
+}
+
+
+def category_of(pick):
+    """The pick's section: selector's judgment, else its source's home."""
+    cat = pick.get("cat")
+    if cat in CATEGORIES:
+        return cat
+    return SOURCE_CATEGORY.get(pick["source"], "systems")
+
+
 PICKS = 10                 # the daily reading list length
 MAX_PER_SOURCE = 2         # diversity: one blog must not fill the list
 POOL_TIERS = (14, 45, 120, 730)  # widen the unread window until enough
@@ -242,22 +277,26 @@ def select_picks(cands, model):
         "- Prefer my interests but keep 1-2 wildcard picks that a strong "
         "engineer would regret missing.\n"
         "- Older posts are fine — timeless beats recent-but-thin.\n\n"
-        "Output ONLY a JSON array of candidate indices in rank order, "
-        "e.g. [4, 0, 17, …]. No prose.",
-        max_tokens=300,
+        "Output ONLY a JSON array, rank order, one object per pick: "
+        '[{"i": <candidate index>, "cat": "<data | systems | ai | craft '
+        "— judge the POST, not the blog>\"}, …]. No prose.",
+        max_tokens=500,
         model=model,
     )
     start, end = reply.find("["), reply.rfind("]")
     try:
         idx = json.loads(reply[start : end + 1])
         picked, per_source = [], {}
-        for i in idx:
+        for item in idx:
+            # tolerate both bare indices and {"i":…, "cat":…} objects
+            i = item.get("i") if isinstance(item, dict) else item
+            cat = item.get("cat") if isinstance(item, dict) else None
             if not (isinstance(i, int) and 0 <= i < len(cands)):
                 continue
-            p = cands[i]
+            p = dict(cands[i], cat=cat)
             if per_source.get(p["source"], 0) >= MAX_PER_SOURCE:
                 continue
-            if p in picked:
+            if any(q["link"] == p["link"] for q in picked):
                 continue
             picked.append(p)
             per_source[p["source"]] = per_source.get(p["source"], 0) + 1
@@ -269,12 +308,14 @@ def select_picks(cands, model):
         for p in cands:
             if len(picked) == PICKS:
                 break
-            if p in picked or per_source.get(p["source"], 0) >= MAX_PER_SOURCE:
+            if per_source.get(p["source"], 0) >= MAX_PER_SOURCE:
                 continue
-            picked.append(p)
+            if any(q["link"] == p["link"] for q in picked):
+                continue
+            picked.append(dict(p))
             per_source[p["source"]] = per_source.get(p["source"], 0) + 1
         return picked or fallback_picks(cands)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, AttributeError):
         return fallback_picks(cands)
 
 
@@ -314,21 +355,34 @@ def write_blurbs(picks, model):
 
 
 def compose(picks, blurbs, pool_size, now):
-    """Deterministic assembly: code owns numbering, headers and links."""
+    """Deterministic assembly: code owns sections, numbering and links.
+
+    Picks are grouped under their category headers (display order fixed
+    by CATEGORIES), rank preserved within a section; numbering runs
+    1..N through the whole message. blurbs is keyed by the pick's
+    ORIGINAL rank (the order handed to write_blurbs)."""
     lines = [
         f"📚 Eng reads — {now:%a %d %b}",
         f"{len(picks)} picks · {pool_size} unread posts across {len(FEEDS)} blogs",
-        "",
     ]
-    for i, p in enumerate(picks, 1):
-        mins = read_minutes(p.get("text"), p["summary"])
-        lines.append(
-            f"{i}. {p['source']} — {p['title']} "
-            f"({mins} min · {p['published']:%d %b %Y})"
-        )
-        lines.append(blurbs.get(i) or p["summary"] or "(no summary available)")
-        lines.append(p["link"])
+    number = 0
+    for cat, header in CATEGORIES.items():
+        section = [(rank, p) for rank, p in enumerate(picks, 1)
+                   if category_of(p) == cat]
+        if not section:
+            continue
         lines.append("")
+        lines.append(header)
+        for rank, p in section:
+            number += 1
+            mins = read_minutes(p.get("text"), p["summary"])
+            lines.append(
+                f"{number}. {p['source']} — {p['title']} "
+                f"({mins} min · {p['published']:%d %b %Y})"
+            )
+            lines.append(blurbs.get(rank) or p["summary"] or "(no summary available)")
+            lines.append(p["link"])
+            lines.append("")
     return "\n".join(lines).rstrip()
 
 
