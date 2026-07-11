@@ -23,19 +23,23 @@ read-time estimate. One agent, one task, one bot:
 🤖 AI & ML ENG
 6. Chip Huyen — …
 
+🔬 SEMICONDUCTORS
+8. Chips and Cheese — …
+
 🧰 CRAFT & CAREER
 9. Dan Luu — …
 ```
 
-Picks are grouped under four sections — 📊 DATA & ANALYTICS,
-⚙️ SYSTEMS & SCALE, 🤖 AI & ML ENG, 🧰 CRAFT & CAREER — categorized
+Picks are grouped under five sections — 📊 DATA & ANALYTICS,
+⚙️ SYSTEMS & SCALE, 🤖 AI & ML ENG, 🔬 SEMICONDUCTORS,
+🧰 CRAFT & CAREER — categorized
 **per post** by the selector (a Netflix post about their warehouse is a
 data post), with a deterministic source-based fallback. Empty sections
 are omitted; rank order is preserved within each section.
 
 ## The reading-pool design
 
-Engineering blogs post rarely (~40 posts/fortnight across 33 feeds), so
+Engineering blogs post rarely (~50 posts/fortnight across 38 feeds), so
 "10 fresh posts a day" is arithmetically impossible. Instead:
 
 - **The pool** — every post I haven't been served yet, across all
@@ -48,7 +52,7 @@ Engineering blogs post rarely (~40 posts/fortnight across 33 feeds), so
   deterministic top-up fills the list (newest unpicked first). At most
   2 picks per source per day, so one blog never dominates.
 
-## The roster (33 blogs, every URL probed before inclusion)
+## The roster (38 blogs, every URL probed before inclusion)
 
 Company engineering: Netflix, Uber, Meta, Cloudflare, Stripe, Slack,
 Discord, Dropbox, Spotify, Airbnb, Pinterest, Canva, Lyft, Grab,
@@ -56,9 +60,11 @@ fly.io, Tailscale, High Scalability. Data platforms: Databricks,
 Confluent, Snowflake, AWS Big Data, dbt, DuckDB. **Individuals**: Dan
 Luu, Julia Evans, Chip Huyen, Eugene Yan, Jack Vanlightly, Brendan
 Gregg, Murat Demirbas, Martin Fowler, Mitchell Hashimoto, the
-Pragmatic Engineer. (Rejected as dead/blocked: LinkedIn Eng, DoorDash,
-Shopify Eng, ClickHouse and PlanetScale blog feeds. Simon Willison and
-the GitHub blog belong to tech-news.)
+Pragmatic Engineer. **Semiconductors**: SemiAnalysis, Chips and Cheese,
+The Chip Letter, Semiconductor Engineering, IEEE Spectrum's chip feed.
+(Rejected as dead/blocked/dormant: LinkedIn Eng, DoorDash, Shopify Eng,
+ClickHouse and PlanetScale blog feeds, Real World Tech. Simon Willison
+and the GitHub blog belong to tech-news.)
 
 ## How the code works
 

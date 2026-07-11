@@ -83,6 +83,13 @@ FEEDS = [
     ("Martin Fowler", "https://martinfowler.com/feed.atom"),
     ("Mitchell Hashimoto", "https://mitchellh.com/feed.xml"),
     ("Pragmatic Engineer", "https://blog.pragmaticengineer.com/rss/"),
+    # semiconductors — chips run the world (Real World Tech probed but
+    # dormant; rejected)
+    ("SemiAnalysis", "https://www.semianalysis.com/feed"),
+    ("Chips and Cheese", "https://chipsandcheese.com/feed/"),
+    ("The Chip Letter", "https://thechipletter.substack.com/feed"),
+    ("Semiconductor Engineering", "https://semiengineering.com/feed/"),
+    ("IEEE Spectrum Semi", "https://spectrum.ieee.org/feeds/topic/semiconductors.rss"),
 ]
 
 # Message sections, in display order. Picks are categorized PER POST by
@@ -92,6 +99,7 @@ CATEGORIES = {
     "data": "📊 DATA & ANALYTICS",
     "systems": "⚙️ SYSTEMS & SCALE",
     "ai": "🤖 AI & ML ENG",
+    "semi": "🔬 SEMICONDUCTORS",
     "craft": "🧰 CRAFT & CAREER",
 }
 SOURCE_CATEGORY = {
@@ -109,6 +117,9 @@ SOURCE_CATEGORY = {
     "Chip Huyen": "ai", "Eugene Yan": "ai",
     "Julia Evans": "craft", "Martin Fowler": "craft",
     "Pragmatic Engineer": "craft", "Dan Luu": "craft",
+    "SemiAnalysis": "semi", "Chips and Cheese": "semi",
+    "The Chip Letter": "semi", "Semiconductor Engineering": "semi",
+    "IEEE Spectrum Semi": "semi",
 }
 
 
@@ -240,7 +251,8 @@ def interests():
     """My reading interests, from the BLOG_INTERESTS secret."""
     return os.environ.get("BLOG_INTERESTS") or (
         "data engineering, distributed systems, streaming/Kafka, "
-        "databases, ML systems, performance engineering, postmortems"
+        "databases, ML systems, semiconductors/chips, "
+        "performance engineering, postmortems"
     )
 
 
@@ -278,7 +290,7 @@ def select_picks(cands, model):
         "engineer would regret missing.\n"
         "- Older posts are fine — timeless beats recent-but-thin.\n\n"
         "Output ONLY a JSON array, rank order, one object per pick: "
-        '[{"i": <candidate index>, "cat": "<data | systems | ai | craft '
+        '[{"i": <candidate index>, "cat": "<data | systems | ai | semi | craft '
         "— judge the POST, not the blog>\"}, …]. No prose.",
         max_tokens=500,
         model=model,

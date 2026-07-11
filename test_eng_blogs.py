@@ -120,6 +120,8 @@ class CategoryTest(unittest.TestCase):
         self.assertEqual(eb.category_of({"source": "Netflix", "cat": "data"}), "data")
         self.assertEqual(eb.category_of({"source": "Netflix", "cat": "bogus"}), "systems")
         self.assertEqual(eb.category_of({"source": "Chip Huyen"}), "ai")
+        self.assertEqual(eb.category_of({"source": "SemiAnalysis"}), "semi")
+        self.assertEqual(eb.category_of({"source": "Netflix", "cat": "semi"}), "semi")
         self.assertEqual(eb.category_of({"source": "Unknown Blog"}), "systems")
 
     def test_object_reply_parsed_with_categories(self):
