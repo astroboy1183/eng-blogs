@@ -1,103 +1,164 @@
 #!/usr/bin/env python3
-"""Offline unit tests for eng_blogs — no network, no model.
+"""Offline tests for eng_blogs — no network, no model, no tokens.
 
-Covers: the drop-undated freshness rule (and published-over-updated
-preference), HTML cleaning, full-text extraction, and the link-deduped
-corpus archive.
-"""
+Covers the reading-pool tiers, the served memory, per-source diversity in
+both selection paths, deterministic read-times and composition (code owns
+links — a hallucinated URL is structurally impossible), blurb parsing,
+and the fresh-only archive gate."""
 
 import json
 import tempfile
-import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from types import SimpleNamespace
+from unittest import mock
 
 import eng_blogs as eb
 
-
-def stamp(dt):
-    return time.struct_time(dt.timetuple())
+NOW = datetime(2026, 7, 11, tzinfo=timezone.utc)
 
 
-NOW = datetime.now(timezone.utc)
-CUTOFF = NOW - timedelta(hours=24)
+def post(title="T", source="Netflix", days_old=1, link=None, summary="sum"):
+    return {
+        "source": source, "title": title, "summary": summary,
+        "link": link or f"https://x/{source}/{title}",
+        "published": NOW - timedelta(days=days_old),
+    }
 
 
-class FreshnessTest(unittest.TestCase):
+class PoolTierTest(unittest.TestCase):
+    def test_fresh_window_used_when_full(self):
+        pool = [post(title=f"p{i}", days_old=i % 10) for i in range(40)]
+        cands = eb.candidates_from(pool, NOW)
+        self.assertGreaterEqual(len(cands), eb.MIN_CANDIDATES)
+        self.assertTrue(all(
+            (NOW - p["published"]).days <= eb.POOL_TIERS[0] for p in cands))
 
-    def test_undated_entries_are_dropped(self):
-        self.assertFalse(eb.fresh({}, CUTOFF))
+    def test_quiet_weeks_widen_to_archive(self):
+        pool = [post(title=f"old{i}", days_old=100 + i) for i in range(35)]
+        cands = eb.candidates_from(pool, NOW)
+        self.assertGreaterEqual(len(cands), eb.MIN_CANDIDATES)  # tier 120d
 
-    def test_published_date_wins_over_updated(self):
-        # An old post lightly edited today must NOT re-enter the window.
-        entry = {
-            "published_parsed": stamp(NOW - timedelta(days=30)),
-            "updated_parsed": stamp(NOW),
-        }
-        self.assertFalse(eb.fresh(entry, CUTOFF))
-
-    def test_new_post_is_kept(self):
-        self.assertTrue(eb.fresh({"published_parsed": stamp(NOW)}, CUTOFF))
-
-
-class CleanAndFullTextTest(unittest.TestCase):
-
-    def test_clean_strips_tags_and_collapses(self):
-        self.assertEqual(eb.clean("<p>a</p>\n\n  <b>b</b>"), "a b")
-
-    def test_full_text_drops_boilerplate_blocks(self):
-        html = ("<html><head><title>x</title></head><body>"
-                "<script>var junk = 1;</script><style>.c{}</style>"
-                "<nav>menu items</nav><p>the actual post body</p></body></html>")
-        saved = eb.requests
-        eb.requests = SimpleNamespace(
-            get=lambda *a, **k: SimpleNamespace(
-                text=html, raise_for_status=lambda: None
-            )
-        )
-        try:
-            text = eb.fetch_full_text("https://example.com/post")
-        finally:
-            eb.requests = saved
-        self.assertIn("the actual post body", text)
-        self.assertNotIn("junk", text)
-        self.assertNotIn("menu items", text)
-
-    def test_full_text_failure_returns_empty(self):
-        def boom(*a, **k):
-            raise OSError("blocked")
-
-        saved = eb.requests
-        eb.requests = SimpleNamespace(get=boom)
-        try:
-            self.assertEqual(eb.fetch_full_text("https://example.com"), "")
-        finally:
-            eb.requests = saved
+    def test_tiny_pool_returns_everything(self):
+        pool = [post(title="only", days_old=500)]
+        self.assertEqual(len(eb.candidates_from(pool, NOW)), 1)
 
 
-class ArchiveTest(unittest.TestCase):
-
-    def test_archive_dedupes_by_link_and_stores_text(self):
-        posts = {"Data & Analytics": [
-            {"source": "DuckDB", "title": "T", "summary": "S", "link": "https://x/p1"},
-        ]}
+class ServedMemoryTest(unittest.TestCase):
+    def test_prunes_and_survives_garbage(self):
         with tempfile.TemporaryDirectory() as tmp:
-            saved_dir, saved_fetch = eb.DATA_DIR, eb.fetch_full_text
-            eb.DATA_DIR = Path(tmp)
-            eb.fetch_full_text = lambda link: "FULL BODY"
+            saved_dir, saved_file = eb.STATE_DIR, eb.SERVED_FILE
+            eb.STATE_DIR = Path(tmp)
+            eb.SERVED_FILE = Path(tmp) / "served.json"
             try:
-                eb.archive_posts(posts)
-                eb.archive_posts(posts)  # second run must not duplicate
-                files = list(Path(tmp).glob("posts-*.jsonl"))
-                lines = files[0].read_text().splitlines()
+                today = NOW.strftime("%Y-%m-%d")
+                eb.save_served({"https://a": today, "https://old": "2020-01-01"})
+                served = eb.load_served()
+                self.assertIn("https://a", served)
+                self.assertNotIn("https://old", served)
+                eb.SERVED_FILE.write_text("not json")
+                self.assertEqual(eb.load_served(), {})
             finally:
-                eb.DATA_DIR, eb.fetch_full_text = saved_dir, saved_fetch
-        self.assertEqual(len(lines), 1)
-        record = json.loads(lines[0])
-        self.assertEqual(record["text"], "FULL BODY")
-        self.assertEqual(record["category"], "Data & Analytics")
+                eb.STATE_DIR, eb.SERVED_FILE = saved_dir, saved_file
+
+
+class SelectionTest(unittest.TestCase):
+    def _cands(self):
+        return ([post(title=f"n{i}", source="Netflix", days_old=i) for i in range(5)]
+                + [post(title=f"u{i}", source="Uber", days_old=i) for i in range(5)]
+                + [post(title=f"g{i}", source="Grab", days_old=i) for i in range(5)])
+
+    def test_selector_ranks_and_caps_per_source(self):
+        reply = json.dumps(list(range(15)))  # model tries to take everything
+        with mock.patch.object(eb, "ask_llm", return_value=reply):
+            picks = eb.select_picks(self._cands(), "m")
+        self.assertLessEqual(len(picks), eb.PICKS)
+        for src in ("Netflix", "Uber", "Grab"):
+            self.assertLessEqual(
+                sum(1 for p in picks if p["source"] == src), eb.MAX_PER_SOURCE)
+
+    def test_unparseable_selector_falls_back_with_diversity(self):
+        with mock.patch.object(eb, "ask_llm", return_value="no json here"):
+            picks = eb.select_picks(self._cands(), "m")
+        self.assertEqual(len(picks), 6)  # 3 sources × cap 2
+        self.assertLessEqual(
+            max(sum(1 for p in picks if p["source"] == s)
+                for s in ("Netflix", "Uber", "Grab")), eb.MAX_PER_SOURCE)
+
+    def test_invalid_indices_ignored_and_topped_up(self):
+        with mock.patch.object(eb, "ask_llm", return_value="[0, 99, -3, 1]"):
+            picks = eb.select_picks(self._cands(), "m")
+        self.assertEqual([p["title"] for p in picks[:2]], ["n0", "n1"])
+        # 15 candidates, cap 2/source over 3 sources → the top-up fills to 6
+        self.assertEqual(len(picks), 6)
+
+    def test_under_delivering_selector_topped_up_to_ten(self):
+        cands = [post(title=f"p{i}", source=f"S{i}", days_old=i)
+                 for i in range(15)]
+        with mock.patch.object(eb, "ask_llm", return_value="[3]"):
+            picks = eb.select_picks(cands, "m")
+        self.assertEqual(len(picks), eb.PICKS)
+        self.assertEqual(picks[0]["title"], "p3")  # ranked pick stays first
+
+
+class BlurbTest(unittest.TestCase):
+    def test_markers_parsed_and_whitespace_collapsed(self):
+        reply = "<<<1>>>\nFirst  blurb\nacross lines\n<<<2>>>\nSecond blurb"
+        with mock.patch.object(eb, "ask_llm", return_value=reply):
+            blurbs = eb.write_blurbs([post(), post(title="B")], "m")
+        self.assertEqual(blurbs[1], "First blurb across lines")
+        self.assertEqual(blurbs[2], "Second blurb")
+
+    def test_missing_blurb_falls_back_in_compose(self):
+        p = post(summary="the abstract")
+        text = eb.compose([p], {}, pool_size=5, now=NOW)
+        self.assertIn("the abstract", text)
+
+
+class ComposeTest(unittest.TestCase):
+    def test_numbered_deterministic_with_readtime_and_link(self):
+        p = post(title="Kafka tuning", source="Jack Vanlightly")
+        p["text"] = "word " * 460  # → 2 min at 230 wpm
+        text = eb.compose([p], {1: "Great deep-dive."}, pool_size=42, now=NOW)
+        self.assertIn("1. Jack Vanlightly — Kafka tuning (2 min ·", text)
+        self.assertIn("Great deep-dive.", text)
+        self.assertIn(p["link"], text)
+        self.assertIn("42 unread posts", text)
+
+    def test_read_minutes_floors_at_one(self):
+        self.assertEqual(eb.read_minutes("three words here"), 1)
+        self.assertEqual(eb.read_minutes("", "also tiny"), 1)
+
+
+class ArchiveGateTest(unittest.TestCase):
+    def test_only_fresh_posts_archived(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            saved = eb.DATA_DIR
+            eb.DATA_DIR = Path(tmp)
+            try:
+                with mock.patch.object(eb, "fetch_full_text", return_value="body"):
+                    eb.archive_posts([
+                        post(title="fresh", days_old=0),
+                        post(title="ancient", days_old=300),
+                    ])
+                files = list(Path(tmp).glob("posts-*.jsonl"))
+                self.assertEqual(len(files), 1)
+                records = [json.loads(l) for l in files[0].read_text().splitlines()]
+            finally:
+                eb.DATA_DIR = saved
+        titles = [r["title"] for r in records]
+        self.assertIn("fresh", titles)
+        self.assertNotIn("ancient", titles)
+
+    def test_no_fresh_posts_writes_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            saved = eb.DATA_DIR
+            eb.DATA_DIR = Path(tmp)
+            try:
+                eb.archive_posts([post(days_old=300)])
+                self.assertEqual(list(Path(tmp).glob("*.jsonl")), [])
+            finally:
+                eb.DATA_DIR = saved
 
 
 if __name__ == "__main__":

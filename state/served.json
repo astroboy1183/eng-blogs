@@ -1,0 +1,11 @@
+{
+"https://aws.amazon.com/blogs/big-data/how-bigbasket-uses-the-iceberg-based-lakehouse-architecture-on-aws-to-power-lightning-fast-grocery-delivery-across-india/": "2026-07-11",
+"https://aws.amazon.com/blogs/big-data/introducing-apache-spark-connect-support-in-aws-glue-interactive-sessions/": "2026-07-11",
+"https://blog.cloudflare.com/meerkat-introduction/": "2026-07-11",
+"https://discord.com/blog/cost-attribution-in-discords-api": "2026-07-11",
+"https://engineering.fb.com/2026/07/01/data-infrastructure/metas-ai-storage-blueprint-at-scale/": "2026-07-11",
+"https://engineering.grab.com/counter-service-storage-migration": "2026-07-11",
+"https://engineering.grab.com/our-journey-to-apache-iceberg-adoption": "2026-07-11",
+"https://jack-vanlightly.com/blog/2026/7/7/apache-kafka-performance-1-lingerms": "2026-07-11",
+"https://www.confluent.io/blog/tableflow-kafka-iceberg/": "2026-07-11"
+}

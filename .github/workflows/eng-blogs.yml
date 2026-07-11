@@ -16,10 +16,6 @@ on:
         description: 'Set to "scheduler" by fleet-scheduler; leave empty for manual runs'
         default: ''
         required: false
-      lookback_hours:
-        description: 'Hours of posts to cover (catch-up runs)'
-        default: '24'
-        required: false
 
 permissions:
   contents: write  # the run commits its state back here
@@ -74,7 +70,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          ENG_BLOGS_LOOKBACK_HOURS: ${{ inputs.lookback_hours || '24' }}
+          BLOG_INTERESTS: ${{ secrets.BLOG_INTERESTS }}
         run: python eng_blogs.py
 
 
@@ -83,10 +79,10 @@ jobs:
         run: |
           # Best-effort: losing state costs tomorrow's context, never
           # today's message (which already went out).
-          if [ -n "$(git status --porcelain data/)" ]; then
+          if [ -n "$(git status --porcelain data/ state/)" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add data/
+            git add data/ state/
             git commit -m "Update agent state"
             git pull --rebase -q origin main || true
             git push || echo "state push failed (non-fatal)"

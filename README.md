@@ -1,80 +1,95 @@
 # eng-blogs
 
-Morning engineering-blog digest → Telegram, 6:00 IST daily via GitHub
-Actions.
-
-18 company engineering blogs — data platforms, systems at scale, product
-& ML engineering — filtered and summarized for a data engineer. Silent
-on days with no new posts. One agent, one task, one bot:
+**My daily engineering reading list**: the 10 best unread blog posts
+for a data & AI engineer, every morning at 6:00 IST — ranked against my
+interests, each with what it covers, why it's worth the time, and a
+read-time estimate. One agent, one task, one bot:
 `@jayanth_eng_blogs_bot`.
+
+```
+📚 Eng reads — Sat 12 Jul
+10 picks · 497 unread posts across 33 blogs
+
+1. Jack Vanlightly — Apache Kafka performance #1: linger.ms (9 min · 08 Jul 2026)
+   What the post covers, why it's worth my time, the one takeaway.
+   https://…
+
+2. Grab — Scaling Grab's Data Lake: our journey to Apache Iceberg (12 min · 06 Jul 2026)
+   …
+```
+
+## The reading-pool design
+
+Engineering blogs post rarely (~40 posts/fortnight across 33 feeds), so
+"10 fresh posts a day" is arithmetically impossible. Instead:
+
+- **The pool** — every post I haven't been served yet, across all
+  feeds. The candidate window widens tier by tier (14 → 45 → 120 → 730
+  days) until it holds enough candidates, so quiet weeks surface
+  timeless archive pieces instead of padding.
+- **Served memory** (`state/served.json`, committed back) — a post is
+  served exactly once, ever.
+- **10 guaranteed** — the model ranks; if it under-delivers, a
+  deterministic top-up fills the list (newest unpicked first). At most
+  2 picks per source per day, so one blog never dominates.
+
+## The roster (33 blogs, every URL probed before inclusion)
+
+Company engineering: Netflix, Uber, Meta, Cloudflare, Stripe, Slack,
+Discord, Dropbox, Spotify, Airbnb, Pinterest, Canva, Lyft, Grab,
+fly.io, Tailscale, High Scalability. Data platforms: Databricks,
+Confluent, Snowflake, AWS Big Data, dbt, DuckDB. **Individuals**: Dan
+Luu, Julia Evans, Chip Huyen, Eugene Yan, Jack Vanlightly, Brendan
+Gregg, Murat Demirbas, Martin Fowler, Mitchell Hashimoto, the
+Pragmatic Engineer. (Rejected as dead/blocked: LinkedIn Eng, DoorDash,
+Shopify Eng, ClickHouse and PlanetScale blog feeds. Simon Willison and
+the GitHub blog belong to tech-news.)
 
 ## How the code works
 
 `eng_blogs.py`, in pipeline order:
 
-- **`FEEDS`** — `{category: [(source name, feed url)]}`: Data &
-  Analytics (Databricks, Confluent, Snowflake, AWS Big Data, dbt,
-  DuckDB), Systems & Scale (Netflix, Uber, Meta, Cloudflare, Discord,
-  Slack, Stripe, Dropbox), Product & ML Eng (Spotify, Airbnb, Pinterest,
-  Canva). Named tuples so the digest can credit the source. Stripe's
-  feed is the whole blog, not just engineering — the drop-pure-marketing
-  prompt rule handles the mix.
-- **`clean(html)`** — strips tags, collapses whitespace.
-- **`fresh(entry, cutoff)`** — keeps entries newer than the lookback.
-  Undated entries are **dropped** here (opposite of tech-news):
-  corporate feeds are reliably dated, and an undated stale post
-  repeating every day is worse than missing one. Uses the **publish**
-  date, falling back to the updated date only when there's no publish
-  date at all — otherwise a lightly edited old post gets a fresh
-  `updated_parsed`, re-enters the 24h window, and reappears days later.
-- **`gather_posts(lookback_hours)`** — fetches each feed over HTTP with
-  an explicit **20-second timeout** (`requests.get`, then
-  `feedparser.parse(resp.content)`) so one hanging host can't stall the
-  run until the 15-min job timeout. Returns `(posts, failed)`: `posts`
-  is `{category: [{source, title, summary, link}]}`; `failed` lists
-  feeds that erred, returned a non-200, or yielded no usable entries
-  this run. High-volume whole-blog feeds (Databricks, AWS Big Data,
-  Stripe) get a raised `PER_FEED_LIMIT` (30 vs the default
-  `ENTRIES_PER_FEED = 8`) so a busy day isn't truncated before the
-  freshness check. `SUMMARY_CHARS = 400` — blogs have meaty abstracts,
-  so they get more room than news entries.
-- **`summarize(posts)`** — one model call. Unlike the news agents it
-  includes EVERY post (volume is 0–5/day) unless one is pure marketing;
-  each post gets "Source — title", 1–2 sentences with the technical
-  takeaway for a data engineer, and the link. Deep-dives and postmortems
-  rank above release notes.
-- **`main()`** — reads `ENG_BLOGS_LOOKBACK_HOURS` *after* `load_dotenv`
-  (so `.env` values work; a manual workflow run passes a wider window to
-  catch up missed days), then gathers. Zero posts **and** no feed
-  failures → print to the log and stay silent, unless `ENG_BLOGS_FORCE=1`.
-  When feeds are down it sends even on a quiet day, appending a
-  `⚠️ feeds not responding: …` footer so feed rot never hides behind the
-  silence (mirrors release-radar's `failed` list; no cross-day state).
-- **`agentlib.py`** (vendored) — `ask_llm()` one-shot model call;
-  `send_telegram()` chunked sends.
+- **`gather_pool(served)`** — all dated, unserved posts from all feeds
+  (25/feed), newest first; per-feed try/except with a `failed` list so
+  feed rot is surfaced in the message footer, never hidden.
+- **`candidates_from(pool, now)`** — the tiered window: stop widening
+  once `MIN_CANDIDATES = 30` unread posts are in view (capped at 120
+  for the selector prompt).
+- **`select_picks(cands, model)`** — stage 1 (haiku): ranks candidates
+  against `BLOG_INTERESTS` (a secret; substance over news, 1-2
+  wildcards, older-is-fine), returns indices; code enforces the
+  per-source cap, drops invalid indices, and TOPS UP deterministically
+  to 10. An unparseable reply falls back to newest-first-with-cap.
+- **`write_blurbs(picks, model)`** — stage 2 (sonnet): 2-3 specific
+  sentences per pick from the post's REAL fetched text, returned in
+  `<<<N>>>` marker format; a missing blurb falls back to the feed
+  abstract.
+- **`compose(...)`** — DETERMINISTIC assembly: code writes the numbered
+  headers (source — title, read-time from word count at 230 wpm, date)
+  and the links. The model never emits a URL, so a hallucinated link is
+  structurally impossible — no validator needed.
+- **`archive_posts(pool)`** — posts published in the last 48h are
+  appended to `data/posts-YYYY-MM.jsonl` (full text fetched, deduped by
+  link): the growing corpus for the ask-my-library RAG project,
+  unchanged from v1.
+- **`agentlib.py`** (vendored) — `ask_llm()`, `send_telegram()`.
 
 ## Design notes
 
-- Silent-by-default: blogs post rarely, so a message almost always means
-  there's something to read — the one exception is a feed-rot footer on a
-  day that would otherwise be silent.
-- Two crons + dedupe guard: backup at 20:07 IST delivers only if the
-  06:00 primary was dropped or failed.
-
-- **RAG corpus**: every gathered post is appended to
-  `data/posts-YYYY-MM.jsonl` (deduped by link, committed back by the
-  workflow) — the raw material for the planned ask-my-library RAG
-  project. The corpus only exists from the day collection starts.
-
-- **Full-text corpus**: each archived post now carries the post's
-  readable text (fetched once, boilerplate stripped, 20k-char cap) —
-  what the RAG project will actually embed. Blocked/paywalled hosts
-  fall back to the abstract-only record.
+- The old agent was silent-when-quiet; this one is a daily ritual — 10
+  reads always (the only silent-ish path is every feed being dead,
+  which sends a loud feed-rot alert instead).
+- Read-times are deterministic (fetched word count), not model guesses.
+- `BLOG_MODEL_SELECT` / `BLOG_MODEL_WRITE` override the two model tiers.
 - Tests run in CI on every push (`.github/workflows/tests.yml`).
 
 ## Ops
 
-- Schedule: `.github/workflows/eng-blogs.yml` (`30 0 * * *` UTC = 06:00 IST; backup 07:00)
-- Run now (custom window): `gh workflow run eng-blogs.yml -R astroboy1183/eng-blogs -f lookback_hours=72`
-- Secrets (Actions): `ANTHROPIC_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
-- Local test: `ENG_BLOGS_FORCE=1 .venv/bin/python eng_blogs.py`
+- Schedule: fleet-scheduler dispatches 06:00 IST sharp; backup crons
+  `30 0` / `30 1 * * *` UTC with the dedupe guard.
+- Run now: `gh workflow run eng-blogs.yml -R astroboy1183/eng-blogs`
+- Secrets (Actions): `ANTHROPIC_API_KEY`, `TELEGRAM_BOT_TOKEN`,
+  `TELEGRAM_CHAT_ID`, `BLOG_INTERESTS` (comma phrases; change anytime
+  with `gh secret set BLOG_INTERESTS`).
+- Memories: `state/served.json` (never re-serve) and `data/*.jsonl`
+  (the RAG corpus), both committed back by the workflow.
