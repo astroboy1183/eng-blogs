@@ -1,6 +1,6 @@
 # eng-blogs
 
-Evening engineering-blog digest → Telegram, ~19:07 IST daily via GitHub
+Morning engineering-blog digest → Telegram, 6:00 IST daily via GitHub
 Actions.
 
 18 company engineering blogs — data platforms, systems at scale, product
@@ -59,7 +59,7 @@ on days with no new posts. One agent, one task, one bot:
   there's something to read — the one exception is a feed-rot footer on a
   day that would otherwise be silent.
 - Two crons + dedupe guard: backup at 20:07 IST delivers only if the
-  19:07 primary was dropped or failed.
+  06:00 primary was dropped or failed.
 
 - **RAG corpus**: every gathered post is appended to
   `data/posts-YYYY-MM.jsonl` (deduped by link, committed back by the
@@ -74,7 +74,7 @@ on days with no new posts. One agent, one task, one bot:
 
 ## Ops
 
-- Schedule: `.github/workflows/eng-blogs.yml` (`37 13 * * *` UTC = 19:07 IST; backup 20:07)
+- Schedule: `.github/workflows/eng-blogs.yml` (`30 0 * * *` UTC = 06:00 IST; backup 07:00)
 - Run now (custom window): `gh workflow run eng-blogs.yml -R astroboy1183/eng-blogs -f lookback_hours=72`
 - Secrets (Actions): `ANTHROPIC_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
 - Local test: `ENG_BLOGS_FORCE=1 .venv/bin/python eng_blogs.py`

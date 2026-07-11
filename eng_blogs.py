@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Engineering-blog digest.
 
-One Telegram message every evening (~19:07 IST via GitHub Actions): new
+One Telegram message every morning (6:00 IST via GitHub Actions): new
 posts from the company engineering blogs worth a data engineer's time —
 what each post is about, the technical takeaway, and a link.
 
